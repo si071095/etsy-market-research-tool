@@ -3,6 +3,7 @@ import os
 import re
 from collections import defaultdict
 from typing import Dict, Tuple
+from urllib.parse import quote_plus
 
 import pandas as pd
 import requests
@@ -151,6 +152,9 @@ def opportunity_rank(score: int) -> str:
     return "D"
 
 
+def etsy_search_url(keyword: str) -> str:
+    return f"https://www.etsy.com/search?q={quote_plus(str(keyword))}"
+
 def rank_comment(rank: str) -> str:
     return {
         "S": "かなり有望。商品化候補として優先確認。",
@@ -277,6 +281,7 @@ def extract_candidate_terms(listings_df: pd.DataFrame) -> pd.DataFrame:
                 "合計お気に入り数": s["favorites"],
                 "お気に入り率(%)": round(fav_rate, 2),
                 "注目度": round(min(score, 100), 1),
+                "Etsyで見る": etsy_search_url(term),
             })
 
     add_candidates(phrase_stats, "2語フレーズ")
