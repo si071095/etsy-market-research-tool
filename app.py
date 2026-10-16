@@ -153,7 +153,24 @@ def opportunity_rank(score: int) -> str:
 
 
 def etsy_search_url(keyword: str) -> str:
-    return f"https://www.etsy.com/search?q={quote_plus(str(keyword))}"
+    """
+    Etsy検索リンク用。
+    売れ筋発掘で "aesthetic" のような一般語だけが候補になった場合でも、
+    Tシャツ市場を確認できるよう apparel系の語が無ければ "shirt" を付ける。
+    """
+    keyword = str(keyword).strip()
+    lower = keyword.lower()
+
+    apparel_terms = [
+        "shirt", "tshirt", "t-shirt", "tee", "sweatshirt",
+        "hoodie", "apparel", "clothing", "top"
+    ]
+
+    search_keyword = keyword
+    if not any(term in lower for term in apparel_terms):
+        search_keyword = f"{keyword} shirt"
+
+    return f"https://www.etsy.com/search?q={quote_plus(search_keyword)}"
 
 def rank_comment(rank: str) -> str:
     return {
@@ -281,6 +298,7 @@ def extract_candidate_terms(listings_df: pd.DataFrame) -> pd.DataFrame:
                 "合計お気に入り数": s["favorites"],
                 "お気に入り率(%)": round(fav_rate, 2),
                 "注目度": round(min(score, 100), 1),
+                "Etsy検索語": term if any(x in term.lower() for x in ["shirt", "tshirt", "t-shirt", "tee", "sweatshirt", "hoodie"]) else f"{term} shirt",
                 "Etsyで見る": etsy_search_url(term),
             })
 
@@ -405,7 +423,7 @@ if mode == "🔥 売れ筋を探す":
 
             st.subheader("注目テーマ候補 TOP15")
             st.dataframe(discovery_df.head(15), use_container_width=True, hide_index=True)
-            st.info("この一覧は『実売上ランキング』ではなく、Etsy上で閲覧・お気に入り反応が見えるテーマ候補です。気になる候補を『キーワードを比較する』で再調査してください。")
+            st.info("この一覧は『実売上ランキング』ではなく、Etsy上で閲覧・お気に入り反応が見えるテーマ候補です。EtsyリンクはTシャツ市場を確認できるよう、必要に応じて自動で `shirt` を付けて検索します。")
 
             with st.expander("元になった商品を見る", expanded=False):
                 st.dataframe(listings_df.sort_values(["閲覧数", "お気に入り数"], ascending=[False, False]), use_container_width=True, hide_index=True, column_config={"商品URL": st.column_config.LinkColumn("商品URL")})
