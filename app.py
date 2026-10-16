@@ -330,8 +330,9 @@ mode = st.radio("何をしますか？", ["🔥 売れ筋を探す", "🔎 キ�
 if mode == "🔥 売れ筋を探す":
     st.subheader("🔥 売れ筋候補を自動で探す")
     st.write("何を検索すればいいか分からなくてもOKです。広めの検索から反応の良い言葉・テーマを抽出します。")
+    st.caption("まずは候補から選ぶか、自由入力で広めのテーマを入れてください。")
 
-    seed_choice = st.selectbox("調査の入口", ["日本系Tシャツ全般", "日本レトロ", "東京・街", "食・ラーメン", "猫・ペット", "自分で入力"])
+    input_mode = st.radio("入力方法", ["候補から選ぶ", "自分で入力する"], horizontal=True)
     seed_map = {
         "日本系Tシャツ全般": ["japanese shirt", "japanese graphic tee", "funny japanese shirt", "japanese streetwear shirt"],
         "日本レトロ": ["japanese retro shirt", "retro japan shirt", "japanese vintage shirt", "japanese coffee shirt"],
@@ -340,12 +341,35 @@ if mode == "🔥 売れ筋を探す":
         "猫・ペット": ["japanese cat shirt", "cat japan shirt", "japanese dog shirt", "kawaii cat shirt"],
     }
 
-    if seed_choice == "自分で入力":
-        seed_text = st.text_area("親キーワード（カンマ区切り）", value="japanese shirt, tokyo shirt, japanese retro shirt", height=90)
-        seeds = [x.strip() for x in seed_text.split(",") if x.strip()]
-    else:
+    if input_mode == "候補から選ぶ":
+        seed_choice = st.selectbox("何系の商品を調べますか？", list(seed_map.keys()))
         seeds = seed_map[seed_choice]
         st.caption("使用する親キーワード：" + ", ".join(seeds))
+    else:
+        st.info("自由入力では、細かい商品名ではなく **広めのテーマ** を入れるのがおすすめです。例：camping shirt, fishing shirt, engineer shirt")
+        seed_text = st.text_input(
+            "調べたいジャンルを入力（カンマ区切り）",
+            value="camping shirt, outdoor shirt, camper shirt",
+            placeholder="例：camping shirt, fishing shirt, engineer shirt",
+            help="スマホからも入力できます。細かすぎるキーワードではなく、広めのジャンルがおすすめです。"
+        )
+        with st.expander("自由入力のコツ", expanded=False):
+            st.markdown(
+                """
+**良い例（広めのテーマ）**
+- `camping shirt`
+- `fishing shirt`
+- `engineer shirt`
+- `coffee shirt`
+
+**細かすぎる例**
+- `funny japanese salaryman overtime warrior shirt`
+- `tokyo last train club retro graphic shirt`
+
+まずは広めに入力して、出てきた候補をあとで比較分析するのがおすすめです。
+                """
+            )
+        seeds = [x.strip() for x in seed_text.split(",") if x.strip()]
 
     if st.button("🔥 売れ筋候補を探す", type="primary", use_container_width=True):
         progress = st.progress(0)
