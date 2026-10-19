@@ -1,8 +1,8 @@
-# アパレル市場調査ツール Web版 v12
+# アパレル市場調査ツール Web版 v13
 
-変更:
-- 画面上部にバージョン情報を表示
-- 表示内容: 「バージョン：v12」
+- jacket / hoodie / sweatshirt / shirt / tee などの商品カテゴリ語を需要候補から除外
+- back / front / graphic / design / style / aesthetic など意味の薄い語も除外
+- 2語候補も、テーマ性のある語が含まれないものは除外
+- 画面バージョンを v13 に更新
 
-差し替え:
-既存Web版では `app.py` だけ差し替えればOKです。
+差し替えは app.py だけでOKです。

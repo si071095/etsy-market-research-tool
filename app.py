@@ -23,11 +23,26 @@ NEGATIVE = [
     "clipart", "sticker", "mug", "poster", "bundle", "file"
 ]
 STOPWORDS = {
-    "shirt", "shirts", "tshirt", "tshirts", "tee", "tees", "unisex",
-    "men", "mens", "women", "womens", "gift", "gifts", "graphic",
-    "design", "style", "top", "clothing", "apparel", "for", "and",
-    "the", "a", "an", "with", "of", "in", "on", "to", "from",
-    "by", "new", "cool", "funny", "cute"
+    # 商品カテゴリ・衣類そのもの
+    "shirt", "shirts", "tshirt", "tshirts", "tee", "tees",
+    "hoodie", "hoodies", "sweatshirt", "sweatshirts",
+    "jacket", "jackets", "coat", "coats", "sweater", "sweaters",
+    "crewneck", "crewnecks", "pullover", "pullovers",
+    "tank", "tanks", "tanktop", "tanktops", "top", "tops",
+    "clothing", "apparel", "wear", "wears",
+
+    # 購買・属性系の汎用語
+    "unisex", "men", "mens", "women", "womens", "male", "female",
+    "gift", "gifts", "adult", "adults", "youth", "kids", "kid",
+
+    # テーマとして弱い汎用語
+    "graphic", "design", "style", "printed", "print", "prints",
+    "front", "back", "oversized", "custom", "personalized",
+    "aesthetic", "trendy", "classic", "premium", "soft",
+
+    # 英語ストップワード
+    "for", "and", "the", "a", "an", "with", "of", "in", "on",
+    "to", "from", "by", "new", "cool", "funny", "cute"
 }
 
 
@@ -309,9 +324,41 @@ def extract_candidate_terms(listings_df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     result = pd.DataFrame(rows)
-    generic = {"japanese", "japan", "tokyo", "vintage", "retro", "streetwear"}
-    result = result[~result["候補テーマ"].isin(generic)]
-    return result.sort_values(["注目度", "合計閲覧数", "合計お気に入り数"], ascending=[False, False, False]).drop_duplicates("候補テーマ").head(30)
+
+    # 需要テーマではなく、商品カテゴリ名・汎用語だけの候補を除外
+    generic = {
+        "japanese", "japan", "tokyo", "vintage", "retro", "streetwear",
+        "shirt", "shirts", "tshirt", "tshirts", "tee", "tees",
+        "hoodie", "hoodies", "sweatshirt", "sweatshirts",
+        "jacket", "jackets", "coat", "coats", "sweater", "sweaters",
+        "crewneck", "crewnecks", "pullover", "pullovers",
+        "top", "tops", "apparel", "clothing",
+        "graphic", "design", "style", "front", "back", "aesthetic"
+    }
+    result = result[~result["候補テーマ"].str.lower().isin(generic)]
+
+    category_words = {
+        "shirt", "shirts", "tshirt", "tshirts", "tee", "tees",
+        "hoodie", "hoodies", "sweatshirt", "sweatshirts",
+        "jacket", "jackets", "coat", "coats", "sweater", "sweaters",
+        "crewneck", "crewnecks", "pullover", "pullovers",
+        "top", "tops", "apparel", "clothing"
+    }
+
+    def has_real_theme(term: str) -> bool:
+        parts = tokenize(term)
+        meaningful = [
+            p for p in parts
+            if p not in category_words and p not in STOPWORDS and len(p) >= 3
+        ]
+        return bool(meaningful)
+
+    result = result[result["候補テーマ"].apply(has_real_theme)]
+
+    return result.sort_values(
+        ["注目度", "合計閲覧数", "合計お気に入り数"],
+        ascending=[False, False, False]
+    ).drop_duplicates("候補テーマ").head(30)
 
 
 def build_excel(summary_df, listings_df, discovery_df=None) -> bytes:
@@ -332,7 +379,7 @@ st.set_page_config(page_title="アパレル市場調査ツール", page_icon="�
 
 st.title("📊 アパレル市場調査ツール")
 st.caption("Etsyの公開商品データから、需要候補・売れ筋候補・テーマ別市場を調べます。")
-st.info("🧩 バージョン：v12")
+st.info("🧩 バージョン：v13")
 
 with st.expander("📘 使い方", expanded=False):
     st.markdown("""
@@ -425,6 +472,8 @@ with tab1:
         "`Japan NINJA graphic tee`、`Japan NINJA retro shirt` などを横断して、"
         "『日本 × NINJA × Tシャツ』の需要候補を探します。"
     )
+
+    st.caption("※ jacket / hoodie / shirt / back など、商品種別や意味の薄い語は需要候補から自動除外します。")
 
     if st.button("🔥 需要候補を自動で探す", type="primary", use_container_width=True, key="demand_search"):
         progress = st.progress(0)
