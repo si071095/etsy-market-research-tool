@@ -332,11 +332,12 @@ st.set_page_config(page_title="アパレル市場調査ツール", page_icon="�
 
 st.title("📊 アパレル市場調査ツール")
 st.caption("Etsyの公開商品データから、需要候補・売れ筋候補・テーマ別市場を調べます。")
+st.info("🧩 バージョン：v12")
 
 with st.expander("📘 使い方", expanded=False):
     st.markdown("""
 **① 需要を探す**  
-アパレル内で商品カテゴリを選び、必要なら Japan / NINJA などを追加して、反応が強いテーマ候補を出します。
+**Japan を必須軸**にして、アパレル内で反応が強いテーマ候補を探します。必要なら NINJA / Tokyo / Samurai などを追加できます。
 
 **② 売れ筋を探す**  
 「猫系」「キャンプ系」など大きなジャンルが決まっている時に、その中から細かい候補を探します。
@@ -385,19 +386,28 @@ with tab1:
         ]
     }
 
+    st.success("この事業では「日本」を軸にするため、検索には常に **Japan** を含めます。")
+
     extra_keyword = st.text_input(
         "追加キーワード（任意）",
         value="",
-        placeholder="例：Japan / NINJA / Tokyo / Samurai",
-        help="空欄ならアパレル全体から探します。入力すると、その言葉を各検索語に自動で追加します。",
+        placeholder="例：NINJA / Tokyo / Samurai / Ramen",
+        help="Japan は常に自動で付きます。ここには追加したい切り口だけ入力してください。",
         key="demand_extra_keyword"
     ).strip()
 
     auto_seeds = apparel_seed_map[apparel_choice]
 
+    # 「日本」を必須軸として常に Japan を付与。
+    # 追加キーワードがあれば Japan + 追加語 + アパレル検索語 の形にする。
     if extra_keyword:
         auto_seeds = [
-            f"{extra_keyword} {seed}"
+            f"Japan {extra_keyword} {seed}"
+            for seed in auto_seeds
+        ]
+    else:
+        auto_seeds = [
+            f"Japan {seed}"
             for seed in auto_seeds
         ]
 
@@ -411,9 +421,9 @@ with tab1:
         st.write(", ".join(auto_seeds))
 
     st.info(
-        "例：商品カテゴリを「Tシャツ」、追加キーワードを「Japan」にすると、"
-        "`Japan graphic tee`、`Japan retro shirt`、`Japan cat shirt` などを横断して、"
-        "反応の良いテーマ候補を探します。"
+        "例：商品カテゴリを「Tシャツ」、追加キーワードを「NINJA」にすると、"
+        "`Japan NINJA graphic tee`、`Japan NINJA retro shirt` などを横断して、"
+        "『日本 × NINJA × Tシャツ』の需要候補を探します。"
     )
 
     if st.button("🔥 需要候補を自動で探す", type="primary", use_container_width=True, key="demand_search"):
