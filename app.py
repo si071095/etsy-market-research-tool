@@ -327,30 +327,145 @@ def build_excel(summary_df, listings_df, discovery_df=None) -> bytes:
     return buffer.getvalue()
 
 
+
 st.set_page_config(page_title="アパレル市場調査ツール", page_icon="📊", layout="wide")
+
 st.title("📊 アパレル市場調査ツール")
-st.caption("Etsyの公開商品データから、POD向けの市場候補を探します。")
+st.caption("Etsyの公開商品データから、需要候補・売れ筋候補・テーマ別市場を調べます。")
 
 with st.expander("📘 使い方", expanded=False):
     st.markdown("""
-### 2つの使い方があります
-**① 売れ筋を探す**  
-何を検索すればいいか分からない場合はこちら。広めの検索から、閲覧・お気に入り反応が見えるテーマ候補を自動で探します。
+**① 需要を探す**  
+何を売るか決まっていない時に使います。複数ジャンルを横断し、反応が強いテーマ候補を出します。
 
-**② キーワードを比較する**  
-調べたいテーマが決まっている場合はこちら。複数の英語キーワードを比較し、競合・価格・需要などから「参入期待度」を出します。
+**② 売れ筋を探す**  
+「猫系」「キャンプ系」など大きなジャンルが決まっている時に、その中から細かい候補を探します。
 
-※ Etsyの競合商品の実売上数は取得できないため、売れ筋候補は **Views / Favorites / Favorite Rate / 競合状況** から推定しています。
-    """)
+**③ テーマを調べる**  
+調べたいキーワードが決まっている時に、競合・価格・需要を比較します。
 
-mode = st.radio("何をしますか？", ["🔥 売れ筋を探す", "🔎 キーワードを比較する"], horizontal=True)
+※ 実売上数そのものではなく、Views / Favorites / Favorite Rate / 競合状況からの推定です。
+""")
 
-if mode == "🔥 売れ筋を探す":
-    st.subheader("🔥 売れ筋候補を自動で探す")
-    st.write("何を検索すればいいか分からなくてもOKです。広めの検索から反応の良い言葉・テーマを抽出します。")
-    st.caption("まずは候補から選ぶか、自由入力で広めのテーマを入れてください。")
+tab1, tab2, tab3 = st.tabs(["🔥 需要を探す", "🔎 売れ筋を探す", "📊 テーマを調べる"])
 
-    input_mode = st.radio("入力方法", ["候補から選ぶ", "自分で入力する"], horizontal=True)
+with tab1:
+    st.subheader("🔥 需要を探す")
+    st.write("何を売るか決まっていなくてもOK。複数ジャンルを横断して、反応が強いテーマ候補を自動で探します。")
+
+    discovery_scope = st.selectbox(
+        "探索範囲",
+        ["日本・東京系を中心に探す", "幅広く探す"],
+        key="demand_scope"
+    )
+
+    broad_seed_map = {
+        "日本・東京系を中心に探す": [
+            "japanese shirt", "tokyo shirt", "japanese graphic tee",
+            "japanese retro shirt", "japanese streetwear shirt",
+            "japanese cat shirt", "ramen shirt", "sushi shirt",
+            "japanese coffee shirt", "japanese culture shirt"
+        ],
+        "幅広く探す": [
+            "graphic tee", "funny shirt", "retro shirt", "vintage shirt",
+            "cat shirt", "dog shirt", "camping shirt", "fishing shirt",
+            "coffee shirt", "gaming shirt", "nurse shirt", "teacher shirt"
+        ]
+    }
+    auto_seeds = broad_seed_map[discovery_scope]
+
+    with st.expander("今回横断する検索ジャンルを見る", expanded=False):
+        st.write(", ".join(auto_seeds))
+
+    st.info("公開されている閲覧数・お気に入り数などから、需要がありそうなテーマを自動発掘します。")
+
+    if st.button("🔥 需要候補を自動で探す", type="primary", use_container_width=True, key="demand_search"):
+        progress = st.progress(0)
+        status = st.empty()
+        all_listings, broad_summaries = [], []
+
+        for i, seed in enumerate(auto_seeds, start=1):
+            status.write(f"探索中：**{seed}**")
+            try:
+                df, summary = analyze_keyword(seed)
+                if not df.empty:
+                    all_listings.append(df)
+                broad_summaries.append(summary)
+            except Exception as e:
+                st.error(f"{seed}：{e}")
+            progress.progress(i / len(auto_seeds))
+
+        progress.empty()
+        status.empty()
+
+        all_df = pd.concat(all_listings, ignore_index=True) if all_listings else pd.DataFrame()
+        broad_summary_df = pd.DataFrame(broad_summaries)
+        demand_candidates = extract_candidate_terms(all_df)
+
+        if demand_candidates.empty:
+            st.warning("需要候補を十分に抽出できませんでした。")
+        else:
+            demand_candidates = demand_candidates.copy()
+            demand_candidates["需要スコア"] = (
+                demand_candidates["注目度"] * 0.55
+                + demand_candidates["お気に入り率(%)"].clip(upper=20) * 1.5
+                + demand_candidates["出現商品数"].clip(upper=20) * 0.75
+            ).clip(upper=100).round(1)
+
+            demand_candidates = demand_candidates.sort_values(
+                ["需要スコア", "合計閲覧数", "合計お気に入り数"],
+                ascending=[False, False, False]
+            )
+
+            top = demand_candidates.iloc[0]
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("需要候補", top["候補テーマ"])
+            c2.metric("需要スコア", top["需要スコア"])
+            c3.metric("合計閲覧数", int(top["合計閲覧数"]))
+            c4.metric("お気に入り率", f'{top["お気に入り率(%)"]}%')
+
+            st.subheader("需要候補 TOP15")
+            show_cols = [
+                "候補テーマ", "需要スコア", "出現商品数", "合計閲覧数",
+                "合計お気に入り数", "お気に入り率(%)", "Etsy検索語", "Etsyで見る"
+            ]
+            st.dataframe(
+                demand_candidates[show_cols].head(15),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Etsyで見る": st.column_config.LinkColumn("Etsyで見る", display_text="Etsyで見る")
+                }
+            )
+
+            with st.expander("元の商品を見る", expanded=False):
+                st.dataframe(
+                    all_df.sort_values(["閲覧数", "お気に入り数"], ascending=[False, False]),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={"商品URL": st.column_config.LinkColumn("商品URL")}
+                )
+
+            excel_bytes = build_excel(broad_summary_df, all_df, demand_candidates)
+            st.download_button(
+                "⬇️ 需要発掘結果をExcelでダウンロード",
+                data=excel_bytes,
+                file_name="etsy_demand_discovery.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+with tab2:
+    st.subheader("🔎 売れ筋を探す")
+    st.write("大きなジャンルの中から、反応の良い細かいテーマ候補を探します。")
+
+    input_mode = st.radio(
+        "入力方法",
+        ["候補から選ぶ", "自分で入力する"],
+        horizontal=True,
+        key="trend_input_mode"
+    )
+
     seed_map = {
         "日本系Tシャツ全般": ["japanese shirt", "japanese graphic tee", "funny japanese shirt", "japanese streetwear shirt"],
         "日本レトロ": ["japanese retro shirt", "retro japan shirt", "japanese vintage shirt", "japanese coffee shirt"],
@@ -360,80 +475,91 @@ if mode == "🔥 売れ筋を探す":
     }
 
     if input_mode == "候補から選ぶ":
-        seed_choice = st.selectbox("何系の商品を調べますか？", list(seed_map.keys()))
+        seed_choice = st.selectbox("何系の商品を調べますか？", list(seed_map.keys()), key="trend_seed_choice")
         seeds = seed_map[seed_choice]
         st.caption("使用する親キーワード：" + ", ".join(seeds))
     else:
-        st.info("自由入力では、細かい商品名ではなく **広めのテーマ** を入れるのがおすすめです。例：camping shirt, fishing shirt, engineer shirt")
+        st.info("細かい商品名ではなく広めのジャンルがおすすめです。例：camping shirt, fishing shirt, engineer shirt")
         seed_text = st.text_input(
             "調べたいジャンルを入力（カンマ区切り）",
             value="camping shirt, outdoor shirt, camper shirt",
             placeholder="例：camping shirt, fishing shirt, engineer shirt",
-            help="スマホからも入力できます。細かすぎるキーワードではなく、広めのジャンルがおすすめです。"
+            key="trend_seed_text"
         )
-        with st.expander("自由入力のコツ", expanded=False):
-            st.markdown(
-                """
-**良い例（広めのテーマ）**
-- `camping shirt`
-- `fishing shirt`
-- `engineer shirt`
-- `coffee shirt`
-
-**細かすぎる例**
-- `funny japanese salaryman overtime warrior shirt`
-- `tokyo last train club retro graphic shirt`
-
-まずは広めに入力して、出てきた候補をあとで比較分析するのがおすすめです。
-                """
-            )
         seeds = [x.strip() for x in seed_text.split(",") if x.strip()]
 
-    if st.button("🔥 売れ筋候補を探す", type="primary", use_container_width=True):
-        progress = st.progress(0)
-        status = st.empty()
-        all_listings, seed_summaries = [], []
-
-        for i, seed in enumerate(seeds, start=1):
-            status.write(f"調査中：**{seed}**")
-            try:
-                df, summary = analyze_keyword(seed)
-                if not df.empty:
-                    all_listings.append(df)
-                seed_summaries.append(summary)
-            except Exception as e:
-                st.error(f"{seed}：{e}")
-            progress.progress(i / len(seeds))
-
-        progress.empty(); status.empty()
-        listings_df = pd.concat(all_listings, ignore_index=True) if all_listings else pd.DataFrame()
-        summary_df = pd.DataFrame(seed_summaries)
-        discovery_df = extract_candidate_terms(listings_df)
-
-        if discovery_df.empty:
-            st.warning("候補を十分に抽出できませんでした。別の入口で試してください。")
+    if st.button("🔎 売れ筋候補を探す", type="primary", use_container_width=True, key="trend_search"):
+        if not seeds:
+            st.warning("ジャンルを入力してください。")
         else:
-            st.success("売れ筋候補の抽出が完了しました")
-            top = discovery_df.iloc[0]
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("注目候補", top["候補テーマ"])
-            c2.metric("注目度", top["注目度"])
-            c3.metric("関連商品数", int(top["出現商品数"]))
-            c4.metric("お気に入り率", f'{top["お気に入り率(%)"]}%')
+            progress = st.progress(0)
+            status = st.empty()
+            all_listings, seed_summaries = [], []
 
-            st.subheader("注目テーマ候補 TOP15")
-            st.dataframe(discovery_df.head(15), use_container_width=True, hide_index=True)
-            st.info("この一覧は『実売上ランキング』ではなく、Etsy上で閲覧・お気に入り反応が見えるテーマ候補です。EtsyリンクはTシャツ市場を確認できるよう、必要に応じて自動で `shirt` を付けて検索します。")
+            for i, seed in enumerate(seeds, start=1):
+                status.write(f"調査中：**{seed}**")
+                try:
+                    df, summary = analyze_keyword(seed)
+                    if not df.empty:
+                        all_listings.append(df)
+                    seed_summaries.append(summary)
+                except Exception as e:
+                    st.error(f"{seed}：{e}")
+                progress.progress(i / len(seeds))
 
-            with st.expander("元になった商品を見る", expanded=False):
-                st.dataframe(listings_df.sort_values(["閲覧数", "お気に入り数"], ascending=[False, False]), use_container_width=True, hide_index=True, column_config={"商品URL": st.column_config.LinkColumn("商品URL")})
+            progress.empty()
+            status.empty()
 
-            excel_bytes = build_excel(summary_df, listings_df, discovery_df)
-            st.download_button("⬇️ 発掘結果をExcelでダウンロード", data=excel_bytes, file_name="etsy_discovery_result.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            listings_df = pd.concat(all_listings, ignore_index=True) if all_listings else pd.DataFrame()
+            summary_df = pd.DataFrame(seed_summaries)
+            discovery_df = extract_candidate_terms(listings_df)
 
-else:
-    st.subheader("🔎 キーワードを比較する")
-    preset = st.selectbox("調べたいジャンルの例", ["自由入力", "会社員・通勤", "東京・電車", "夜・終電", "日本レトロ"])
+            if discovery_df.empty:
+                st.warning("候補を十分に抽出できませんでした。")
+            else:
+                top = discovery_df.iloc[0]
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("注目候補", top["候補テーマ"])
+                c2.metric("注目度", top["注目度"])
+                c3.metric("関連商品数", int(top["出現商品数"]))
+                c4.metric("お気に入り率", f'{top["お気に入り率(%)"]}%')
+
+                st.subheader("注目テーマ候補 TOP15")
+                st.dataframe(
+                    discovery_df.head(15),
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Etsyで見る": st.column_config.LinkColumn("Etsyで見る", display_text="Etsyで見る")
+                    }
+                )
+
+                with st.expander("元の商品を見る", expanded=False):
+                    st.dataframe(
+                        listings_df.sort_values(["閲覧数", "お気に入り数"], ascending=[False, False]),
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={"商品URL": st.column_config.LinkColumn("商品URL")}
+                    )
+
+                excel_bytes = build_excel(summary_df, listings_df, discovery_df)
+                st.download_button(
+                    "⬇️ 発掘結果をExcelでダウンロード",
+                    data=excel_bytes,
+                    file_name="etsy_trend_discovery.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+
+with tab3:
+    st.subheader("📊 テーマを調べる")
+    st.write("調べたいキーワードが決まっている場合に、競合・価格・需要を比較します。")
+
+    preset = st.selectbox(
+        "候補",
+        ["自由入力", "会社員・通勤", "東京・電車", "夜・終電", "日本レトロ"],
+        key="compare_preset"
+    )
     preset_values = {
         "自由入力": "",
         "会社員・通勤": "salaryman shirt, japanese office shirt, overtime shirt, commuter shirt",
@@ -442,62 +568,88 @@ else:
         "日本レトロ": "japanese retro shirt, kissaten shirt, retro japan shirt, japanese coffee shirt",
     }
     default_text = preset_values[preset] if preset != "自由入力" else "salaryman shirt, tokyo train shirt, japanese office shirt"
-    keywords_text = st.text_area("検索キーワード", value=default_text, height=100, help="英語推奨。複数の場合はカンマ区切りです。")
 
-    if st.button("🔎 市場を分析する", type="primary", use_container_width=True):
+    keywords_text = st.text_input(
+        "検索キーワード",
+        value=default_text,
+        placeholder="例：camping shirt, fishing shirt, engineer shirt",
+        key="compare_keywords"
+    )
+
+    if st.button("📊 市場を分析する", type="primary", use_container_width=True, key="compare_search"):
         keywords = [x.strip() for x in keywords_text.split(",") if x.strip()]
         if not keywords:
             st.warning("検索キーワードを入力してください。")
-            st.stop()
+        else:
+            summaries, detail_frames = [], []
+            progress = st.progress(0)
+            status = st.empty()
 
-        summaries, detail_frames = [], []
-        progress = st.progress(0); status = st.empty()
-        for idx, keyword in enumerate(keywords, start=1):
-            status.write(f"分析中：**{keyword}**")
-            try:
-                detail_df, summary = analyze_keyword(keyword)
-                summaries.append(summary)
-                if not detail_df.empty:
-                    detail_frames.append(detail_df)
-            except Exception as e:
-                st.error(f"{keyword}：{e}")
-            progress.progress(idx / len(keywords))
-        status.empty(); progress.empty()
+            for i, keyword in enumerate(keywords, start=1):
+                status.write(f"分析中：**{keyword}**")
+                try:
+                    detail_df, summary = analyze_keyword(keyword)
+                    summaries.append(summary)
+                    if not detail_df.empty:
+                        detail_frames.append(detail_df)
+                except Exception as e:
+                    st.error(f"{keyword}：{e}")
+                progress.progress(i / len(keywords))
 
-        if not summaries:
-            st.error("取得できたデータがありませんでした。")
-            st.stop()
+            status.empty()
+            progress.empty()
 
-        summary_df = pd.DataFrame(summaries).sort_values(by=["参入期待度", "関連商品数"], ascending=[False, False])
-        listings_df = pd.concat(detail_frames, ignore_index=True) if detail_frames else pd.DataFrame()
-        if not listings_df.empty:
-            listings_df = listings_df.sort_values(by=["検索キーワード", "関連度スコア", "お気に入り数"], ascending=[True, False, False])
+            if summaries:
+                summary_df = pd.DataFrame(summaries).sort_values(
+                    by=["参入期待度", "関連商品数"],
+                    ascending=[False, False]
+                )
+                summary_df["Etsyで見る"] = summary_df["検索キーワード"].apply(etsy_search_url)
 
-        st.success("分析完了")
-        top = summary_df.iloc[0]
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("トップ候補", top["検索キーワード"])
-        c2.metric("参入期待度", int(top["参入期待度"]))
-        c3.metric("評価", top["評価"])
-        c4.metric("関連商品数", int(top["関連商品数"]))
-        st.markdown(f"**判定コメント：** {rank_comment(top['評価'])}")
+                listings_df = pd.concat(detail_frames, ignore_index=True) if detail_frames else pd.DataFrame()
 
-        st.subheader("市場比較")
-        visible_cols = ["検索キーワード", "参入期待度", "評価", "Etsy検索件数", "関連商品数", "関連商品率(%)", "価格中央値(USD)", "関連商品の総閲覧数", "関連商品の総お気に入り数", "お気に入り率(%)"]
-        st.dataframe(summary_df[visible_cols], use_container_width=True, hide_index=True)
-        st.subheader("参入期待度")
-        st.bar_chart(summary_df[["検索キーワード", "参入期待度"]].set_index("検索キーワード"))
+                top = summary_df.iloc[0]
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("トップ候補", top["検索キーワード"])
+                c2.metric("参入期待度", int(top["参入期待度"]))
+                c3.metric("評価", top["評価"])
+                c4.metric("関連商品数", int(top["関連商品数"]))
 
-        with st.expander("スコアの内訳を見る", expanded=False):
-            score_cols = ["検索キーワード", "競合点", "価格点", "需要点", "サンプル点", "小市場補正", "閲覧数補正", "飽和補正", "関連度補正", "参入期待度", "評価"]
-            st.dataframe(summary_df[score_cols], use_container_width=True, hide_index=True)
+                visible_cols = [
+                    "検索キーワード", "参入期待度", "評価", "Etsy検索件数",
+                    "関連商品数", "関連商品率(%)", "価格中央値(USD)",
+                    "関連商品の総閲覧数", "関連商品の総お気に入り数",
+                    "お気に入り率(%)", "Etsyで見る"
+                ]
 
-        with st.expander("取得した商品を見る", expanded=False):
-            st.dataframe(listings_df, use_container_width=True, hide_index=True, column_config={"商品URL": st.column_config.LinkColumn("商品URL")})
+                st.dataframe(
+                    summary_df[visible_cols],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Etsyで見る": st.column_config.LinkColumn("Etsyで見る", display_text="Etsyで見る")
+                    }
+                )
 
-        excel_bytes = build_excel(summary_df, listings_df)
-        st.download_button("⬇️ 分析結果をExcelでダウンロード", data=excel_bytes, file_name="etsy_market_research.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+                st.bar_chart(summary_df[["検索キーワード", "参入期待度"]].set_index("検索キーワード"))
+
+                with st.expander("取得した商品を見る", expanded=False):
+                    st.dataframe(
+                        listings_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={"商品URL": st.column_config.LinkColumn("商品URL")}
+                    )
+
+                excel_bytes = build_excel(summary_df, listings_df)
+                st.download_button(
+                    "⬇️ 分析結果をExcelでダウンロード",
+                    data=excel_bytes,
+                    file_name="etsy_market_research.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
 
 st.divider()
-st.caption("※ 『売れ筋候補』『参入期待度』は、Etsyの公開データから算出した参考値です。競合商品の実売上数そのものではありません。")
+st.caption("※ 需要候補・売れ筋候補・参入期待度はEtsyの公開データから算出した参考値です。実売上数そのものではありません。")
 st.caption("The term 'Etsy' is a trademark of Etsy, Inc. This application uses the Etsy API but is not endorsed or certified by Etsy, Inc.")
