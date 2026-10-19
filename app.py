@@ -336,7 +336,7 @@ st.caption("Etsyの公開商品データから、需要候補・売れ筋候補�
 with st.expander("📘 使い方", expanded=False):
     st.markdown("""
 **① 需要を探す**  
-何を売るか決まっていない時に使います。複数ジャンルを横断し、反応が強いテーマ候補を出します。
+アパレル内で商品カテゴリを選び、必要なら Japan / NINJA などを追加して、反応が強いテーマ候補を出します。
 
 **② 売れ筋を探す**  
 「猫系」「キャンプ系」など大きなジャンルが決まっている時に、その中から細かい候補を探します。
@@ -351,33 +351,70 @@ tab1, tab2, tab3 = st.tabs(["🔥 需要を探す", "🔎 売れ筋を探す", "
 
 with tab1:
     st.subheader("🔥 需要を探す")
-    st.write("何を売るか決まっていなくてもOK。複数ジャンルを横断して、反応が強いテーマ候補を自動で探します。")
-
-    discovery_scope = st.selectbox(
-        "探索範囲",
-        ["日本・東京系を中心に探す", "幅広く探す"],
-        key="demand_scope"
+    st.write(
+        "アパレル内に限定して、反応が強いテーマ候補を自動で探します。"
+        "必要なら Japan / NINJA などの追加キーワードも掛け合わせられます。"
     )
 
-    broad_seed_map = {
-        "日本・東京系を中心に探す": [
-            "japanese shirt", "tokyo shirt", "japanese graphic tee",
-            "japanese retro shirt", "japanese streetwear shirt",
-            "japanese cat shirt", "ramen shirt", "sushi shirt",
-            "japanese coffee shirt", "japanese culture shirt"
-        ],
-        "幅広く探す": [
+    apparel_choice = st.selectbox(
+        "商品カテゴリ",
+        ["Tシャツ", "パーカー", "スウェット", "全アパレル"],
+        key="demand_apparel"
+    )
+
+    apparel_seed_map = {
+        "Tシャツ": [
             "graphic tee", "funny shirt", "retro shirt", "vintage shirt",
             "cat shirt", "dog shirt", "camping shirt", "fishing shirt",
             "coffee shirt", "gaming shirt", "nurse shirt", "teacher shirt"
+        ],
+        "パーカー": [
+            "graphic hoodie", "funny hoodie", "retro hoodie", "vintage hoodie",
+            "cat hoodie", "dog hoodie", "camping hoodie", "fishing hoodie",
+            "coffee hoodie", "gaming hoodie"
+        ],
+        "スウェット": [
+            "graphic sweatshirt", "funny sweatshirt", "retro sweatshirt", "vintage sweatshirt",
+            "cat sweatshirt", "dog sweatshirt", "camping sweatshirt", "fishing sweatshirt",
+            "coffee sweatshirt", "gaming sweatshirt"
+        ],
+        "全アパレル": [
+            "graphic shirt", "graphic tee", "graphic hoodie", "graphic sweatshirt",
+            "funny shirt", "retro shirt", "vintage shirt", "cat shirt",
+            "dog shirt", "camping shirt", "fishing shirt", "coffee shirt"
         ]
     }
-    auto_seeds = broad_seed_map[discovery_scope]
 
-    with st.expander("今回横断する検索ジャンルを見る", expanded=False):
+    extra_keyword = st.text_input(
+        "追加キーワード（任意）",
+        value="",
+        placeholder="例：Japan / NINJA / Tokyo / Samurai",
+        help="空欄ならアパレル全体から探します。入力すると、その言葉を各検索語に自動で追加します。",
+        key="demand_extra_keyword"
+    ).strip()
+
+    auto_seeds = apparel_seed_map[apparel_choice]
+
+    if extra_keyword:
+        auto_seeds = [
+            f"{extra_keyword} {seed}"
+            for seed in auto_seeds
+        ]
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.metric("対象カテゴリ", apparel_choice)
+    with c2:
+        st.metric("追加キーワード", extra_keyword if extra_keyword else "なし")
+
+    with st.expander("今回の検索キーワードを見る", expanded=False):
         st.write(", ".join(auto_seeds))
 
-    st.info("公開されている閲覧数・お気に入り数などから、需要がありそうなテーマを自動発掘します。")
+    st.info(
+        "例：商品カテゴリを「Tシャツ」、追加キーワードを「Japan」にすると、"
+        "`Japan graphic tee`、`Japan retro shirt`、`Japan cat shirt` などを横断して、"
+        "反応の良いテーマ候補を探します。"
+    )
 
     if st.button("🔥 需要候補を自動で探す", type="primary", use_container_width=True, key="demand_search"):
         progress = st.progress(0)
@@ -403,7 +440,7 @@ with tab1:
         demand_candidates = extract_candidate_terms(all_df)
 
         if demand_candidates.empty:
-            st.warning("需要候補を十分に抽出できませんでした。")
+            st.warning("需要候補を十分に抽出できませんでした。カテゴリや追加キーワードを変えて試してください。")
         else:
             demand_candidates = demand_candidates.copy()
             demand_candidates["需要スコア"] = (
@@ -434,8 +471,16 @@ with tab1:
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Etsyで見る": st.column_config.LinkColumn("Etsyで見る", display_text="Etsyで見る")
+                    "Etsyで見る": st.column_config.LinkColumn(
+                        "Etsyで見る",
+                        display_text="Etsyで見る"
+                    )
                 }
+            )
+
+            st.caption(
+                "追加キーワードを入れた場合は、その文脈を含む検索結果から需要候補を抽出しています。"
+                "気になる候補はEtsy検索で実商品を確認してください。"
             )
 
             with st.expander("元の商品を見る", expanded=False):
@@ -450,7 +495,7 @@ with tab1:
             st.download_button(
                 "⬇️ 需要発掘結果をExcelでダウンロード",
                 data=excel_bytes,
-                file_name="etsy_demand_discovery.xlsx",
+                file_name="etsy_apparel_demand_discovery.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
